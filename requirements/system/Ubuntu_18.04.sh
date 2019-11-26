@@ -13,3 +13,9 @@ curl -O https://bootstrap.pypa.io/get-pip.py
 # Install Python3 and Pip3
 apt-get install python3 python3-distutils -y 
 python3 get-pip.py -c <(echo 'pip==10.0.1')
+
+# Python-tk required by matplotlib/six
+apt-get install python-tk python3-tk -y
+
+# Install ffmpeg
+apt-get install ffmpeg -y
