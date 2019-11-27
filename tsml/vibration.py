@@ -6,6 +6,15 @@ from pydub import AudioSegment
 from scipy import signal as scipy_signal
 from skimage import exposure
 
+# Kears
+from keras.preprocessing.image import ImageDataGenerator
+from keras.models import Sequential
+from keras.layers import Conv2D, MaxPooling2D
+from keras.layers import Activation, Dropout, Flatten, Dense
+from keras import losses, optimizers
+from keras.utils import to_categorical
+
+
 # Logging
 import logging
 logger = logging.getLogger(__name__)
@@ -140,14 +149,14 @@ def plot_spectrogram(spectrogram):
 #  Analysis functions
 #======================
 
-def get_spectrogram(vibrationdData, log=False, norm=False, overlap=0, resolution=1.0):
+def get_spectrogram(vibrationdData, log=False, norm=False, overlap=0, resolution=1.0, verbose=False):
 
     # Define the number of samples per segment
     nperseg = round(vibrationdData.frequency*resolution)
     
-    
-    logger.debug('VibrationdData data shape: {}'.format(vibrationdData.data.shape))
-    logger.debug('nperseg: {}'.format(nperseg))
+    if verbose:
+        logger.debug('VibrationdData data shape: {}'.format(vibrationdData.data.shape))
+        logger.debug('nperseg: {}'.format(nperseg))
    
     # Call scipy spectrogram function. x = time series of measurement values, fs = sampling frequency of the x time series.
     f, t, spectrogram = scipy_signal.spectrogram(x         = vibrationdData.data,
@@ -166,12 +175,99 @@ def get_spectrogram(vibrationdData, log=False, norm=False, overlap=0, resolution
         spectrogram = np.log(spectrogram)
 
     # Log
-    logger.debug('Spectrogram FFT window resolution (s) = "{}"'.format(resolution))
-    logger.debug('Spectrogram FFT samples per window = "{}"'.format(nperseg))
-    logger.debug('Spectrogram FFT overlap = "{}"'.format(overlap))
-    logger.debug('Spectrogram shape: "{}"'.format(spectrogram.shape))
-    logger.debug('Spectrogram t(s) = "{}"'.format(t))
-    logger.debug('Spectrogram f(Hz) = "{}"'.format(f))
+    if verbose:
+        logger.debug('Spectrogram FFT window resolution (s) = "{}"'.format(resolution))
+        logger.debug('Spectrogram FFT samples per window = "{}"'.format(nperseg))
+        logger.debug('Spectrogram FFT overlap = "{}"'.format(overlap))
+        logger.debug('Spectrogram shape: "{}"'.format(spectrogram.shape))
+        logger.debug('Spectrogram t(s) = "{}"'.format(t))
+        logger.debug('Spectrogram f(Hz) = "{}"'.format(f))
 
     # Return
     return spectrogram
+
+
+
+#======================
+#  ML functions
+#======================
+
+class VibrationClassifier(object):
+    
+    def __init__(self, model, loss, accuracy):
+        self.model    = model
+        self.loss     = loss
+        self.accuracy = accuracy
+    
+    def predict(self, data):
+        return self.model.predict_classes(np.array([data]))
+    
+    def predict_extended(self, data):
+        return self.model.predict(np.array([data]))
+
+
+def train_vibration_classifier(train_data, train_labels, test_data, test_labels, epochs=10, verbose=False):
+
+    # Sanity checks and support vars
+    if set(train_labels) != set(test_labels):
+        raise Exception('Train and test number of labels differ')           
+    num_classes  = len(set(train_labels))
+    
+    if not isinstance(train_data, type(np.array)):
+        train_data = np.array(train_data)
+
+    if not isinstance(train_labels, type(np.array)):
+        train_labels = np.array(train_labels)
+
+    if not isinstance(test_data, type(np.array)):
+        test_data = np.array(test_data)
+    
+    if not isinstance(test_labels, type(np.array)):
+        test_labels = np.array(test_labels) 
+
+    # Assign input shape to the first data element. TODO: Check that data is homogeneous?
+    input_shape = train_data[0].shape
+
+    # Convert labels to categorical
+    train_labels = to_categorical(train_labels, num_classes)
+    test_labels  = to_categorical(test_labels, num_classes)
+  
+    # Log
+    if verbose:
+        logger.debug('Train data shape = "{}"'.format(train_data.shape))
+        logger.debug('Train labels shape = "{}"'.format(train_labels.shape))
+        logger.debug('Test data shape = "{}"'.format(test_data.shape))
+        logger.debug('Test labels shape = "{}"'.format(test_labels.shape))
+
+    # Define model
+    model = Sequential()
+    model.add(Conv2D(32, kernel_size=(3, 3),
+                     activation='relu',
+                     input_shape=input_shape))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Dropout(0.25))
+    model.add(Flatten())
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(num_classes, activation='softmax'))
+
+    # Compile model
+    model.compile(loss=losses.categorical_crossentropy,
+                  optimizer=optimizers.Adadelta(),
+                  metrics=['accuracy'])
+
+    # Fit model and evaluate
+    logger.debug('Starting model training...')
+    model.fit(train_data, train_labels,
+              batch_size      = 10,
+              epochs          = epochs,
+              verbose         = verbose,
+              validation_data = (test_data, test_labels))
+    score = model.evaluate(test_data, test_labels, verbose=verbose)
+    
+    # Log
+    logger.debug('Test loss: {}'.format(score[0]))
+    logger.debug('Test accuracy:{}'.format(score[1]))
+
+    return VibrationClassifier(model=model, loss=score[0], accuracy=score[1])
