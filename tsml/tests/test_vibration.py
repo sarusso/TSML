@@ -11,6 +11,10 @@ import logging
 logging.basicConfig(level='DEBUG')
 logger = logging.getLogger(__name__)
 
+
+from numpy.random import seed
+seed(1)
+
 class test_vibration(unittest.TestCase):
 
     def test_SlicedFile(self):
@@ -121,7 +125,7 @@ class test_vibration(unittest.TestCase):
         #print('True positives: "{}"'.format(TP))
         #print('False positives: "{}"'.format(FP))
         #print('True negatives: "{}"'.format(TN))
-        #print('False positives: "{}"'.format(FN))
+        #print('False negatives: "{}"'.format(FN))
         
         precision   = float(TP)/float(TP+FP)
         recall      = float(TP)/float(TP+FN)
@@ -133,4 +137,4 @@ class test_vibration(unittest.TestCase):
         
         self.assertTrue(precision > 0.98)
         self.assertTrue(recall > 0.98)
-        self.assertTrue(specificity > 0.95)
+        self.assertTrue(specificity > 0.97)
