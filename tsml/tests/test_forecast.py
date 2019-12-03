@@ -110,8 +110,6 @@ class test_forecast(unittest.TestCase):
             forecaster = Forecaster(window_datapoints=24, forecast_datapoints=1, test_ratio=0.3, encoder='diff')
             rmse_values = forecaster.train(pd_dataframe=clean_pd_dataframe, epochs=3, model_type=3, plot=False, verbose=False)
 
-            print(rmse_values)
-
             # Check results
             self.assertTrue(rmse_values[0]<0.28)
 

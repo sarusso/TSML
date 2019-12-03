@@ -1,7 +1,9 @@
 import os
 import tempfile
+from matplotlib import pyplot
+
+# Numpy, Scipy etc
 import numpy as np
-import matplotlib.pyplot as plt
 from pydub import AudioSegment
 from scipy import signal as scipy_signal
 from skimage import exposure
@@ -13,7 +15,6 @@ from keras.layers import Conv2D, MaxPooling2D
 from keras.layers import Activation, Dropout, Flatten, Dense
 from keras import losses, optimizers
 from keras.utils import to_categorical
-
 
 # Logging
 import logging
@@ -137,11 +138,12 @@ def file_to_numpy_array(file_name, format=None, norm=False):
 
 
 def plot_spectrogram(spectrogram):
-    _, ax = plt.subplots(figsize=(7, 6), dpi=80)
+    _, ax = pyplot.subplots(figsize=(7, 6), dpi=80)
     ax.imshow(spectrogram, cmap='viridis', aspect='auto') 
-    plt.ylabel('Frequency [Hz]')
-    plt.xlabel('Time [s]')
-    plt.show()
+    ax.set_ylim(ax.get_ylim()[::-1])
+    pyplot.ylabel('Frequency (Hz)')
+    pyplot.xlabel('Time (s)')
+    pyplot.show()
 
 
 
@@ -149,7 +151,7 @@ def plot_spectrogram(spectrogram):
 #  Analysis functions
 #======================
 
-def get_spectrogram(vibrationdData, log=False, norm=False, overlap=0, resolution=1.0, verbose=False):
+def get_spectrogram(vibrationdData, log=False, overlap=0, resolution=1.0, verbose=False):
 
     # Define the number of samples per segment
     nperseg = round(vibrationdData.frequency*resolution)

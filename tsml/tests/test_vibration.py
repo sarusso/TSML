@@ -48,14 +48,14 @@ class test_vibration(unittest.TestCase):
     def test_spectrogram(self):
         slicedFile = SlicedFile(TEST_DATA_PATH + '8kHz_vibration.m4a', slice_length=1)
         vibrationdData = VibrationData.from_file(slicedFile.slices[34], format='wav')
-        spectrogram = get_spectrogram(vibrationdData)
+        spectrogram = get_spectrogram(vibrationdData, log=True)
         self.assertEqual(type(spectrogram), numpy.ndarray)
         self.assertEqual(spectrogram.shape, (4001,1))
         #plot_spectrogram(spectrogram)
 
     def test_spectrogram_extended(self):
         vibrationdData = VibrationData.from_file(TEST_DATA_PATH + '8kHz_vibration.m4a')
-        spectrogram = get_spectrogram(vibrationdData)
+        spectrogram = get_spectrogram(vibrationdData, log=True)
         self.assertEqual(type(spectrogram), numpy.ndarray)
         self.assertEqual(spectrogram.shape, (4001,179))
         #plot_spectrogram(spectrogram)

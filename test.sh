@@ -11,19 +11,19 @@ if [[ "x$cache" == "xnocache" ]]; then
 else
     docker build -f containers/Ubuntu_18.04/Dockerfile ./ -t tsml_test_container
 fi
-			
+            
 # Start testing
 echo -e  "\n==============================="
 echo -e  "|   Running tests             |"
 echo -e  "===============================\n"
 
 # Reduce verbosity and disable Python buffering
-ENV_VARS="PYTHONWARNINGS=ignore TF_CPP_MIN_LOG_LEVEL=3 PYTHONUNBUFFERED=on"
+ENV_VARS="PYTHONWARNINGS=ignore TF_CPP_MIN_LOG_LEVEL=3 PYTHONUNBUFFERED=on EXTENDED_TESTING=False LOGLEVEL=$LOGLEVEL"
 
 # Use Tensorflow backend
 if [ $# -eq 0 ]; then
-    docker run -v $PWD:/opt/TSML -v $PWD/data:/data -it tsml_test_container /bin/bash -c "cd /opt/TSML && $ENV_VARS KERAS_BACKEND=tensorflow python3 -m unittest"
+    docker run -v $PWD:/opt/TSML -v$PWD/../Luna:/opt/Luna -it tsml_test_container /bin/bash -c "cd /opt/TSML && $ENV_VARS KERAS_BACKEND=tensorflow python3 -m unittest"
 else
-    docker run -v $PWD:/opt/TSML -v $PWD/data:/data -it tsml_test_container /bin/bash -c "cd /opt/TSML && $ENV_VARS KERAS_BACKEND=tensorflow python3 -m unittest $@"
+    docker run -v $PWD:/opt/TSML -v$PWD/../Luna:/opt/Luna -it tsml_test_container /bin/bash -c "cd /opt/TSML && $ENV_VARS KERAS_BACKEND=tensorflow python3 -m unittest $@"
 fi
 

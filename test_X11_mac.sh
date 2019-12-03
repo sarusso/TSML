@@ -18,14 +18,14 @@ echo -e  "|   Running tests             |"
 echo -e  "===============================\n"
 
 # Reduce verbosity and disable Python buffering
-ENV_VARS="PYTHONWARNINGS=ignore TF_CPP_MIN_LOG_LEVEL=3 PYTHONUNBUFFERED=on"
+ENV_VARS="PYTHONWARNINGS=ignore TF_CPP_MIN_LOG_LEVEL=3 PYTHONUNBUFFERED=on EXTENDED_TESTING=False LOGLEVEL=$LOGLEVEL"
 
 xhost + 127.0.0.1
 
 # Use Tensorflow backend
 if [ $# -eq 0 ]; then
-    docker run -v $PWD:/opt/TSML -e DISPLAY=docker.for.mac.host.internal:0 -v $PWD/data:/data -it tsml_test_container /bin/bash -c "cd /opt/TSML && $ENV_VARS KERAS_BACKEND=tensorflow python3 -m unittest"
+    docker run -v $PWD:/opt/TSML -v$PWD/../Luna:/opt/Luna -e DISPLAY=docker.for.mac.host.internal:0 -it tsml_test_container /bin/bash -c "cd /opt/TSML && $ENV_VARS KERAS_BACKEND=tensorflow python3 -m unittest"
 else
-    docker run -v $PWD:/opt/TSML -e DISPLAY=docker.for.mac.host.internal:0 -v $PWD/data:/data -it tsml_test_container /bin/bash -c "cd /opt/TSML && $ENV_VARS KERAS_BACKEND=tensorflow python3 -m unittest $@"
+    docker run -v $PWD:/opt/TSML -v$PWD/../Luna:/opt/Luna -e DISPLAY=docker.for.mac.host.internal:0 -it tsml_test_container /bin/bash -c "cd /opt/TSML && $ENV_VARS KERAS_BACKEND=tensorflow python3 -m unittest $@"
 fi
 
