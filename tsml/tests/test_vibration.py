@@ -8,10 +8,10 @@ TEST_DATA_PATH = '/'.join(os.path.realpath(__file__).split('/')[0:-1]) + '/test_
 
 # Setup logging
 import logging
-logging.basicConfig(level='DEBUG')
+logging.basicConfig(level=os.environ.get('LOGLEVEL') if os.environ.get('LOGLEVEL') else 'CRITICAL')
 logger = logging.getLogger(__name__)
 
-
+# Make results (almost) reproducible
 from numpy.random import seed
 seed(1)
 

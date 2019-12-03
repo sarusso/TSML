@@ -9,6 +9,8 @@ import numpy as np
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import LSTM
+from keras.layers import Dropout
+from keras import optimizers
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import MinMaxScaler
 
@@ -16,29 +18,51 @@ from sklearn.preprocessing import MinMaxScaler
 import logging
 logger = logging.getLogger(__name__)
 
-
+import sys
 #======================
 # Utility functions
 #======================
 
-def encode_data(series):
+def encode_data(data, encoder):
     '''Encode (compute diffs and normalize) data'''
+
+    raw_values = data.values
     
-    # Compute diffs
-    raw_values = series.values
-    diff_series = []
-    for i in range(1, len(raw_values)):
-        value = raw_values[i] - raw_values[i - 1]
-        diff_series.append(value)
-    diff_series = pd.Series(diff_series)
-    diff_values = diff_series.values
-    diff_values = diff_values.reshape(len(diff_values), 1)
+    if encoder=='diff':
+        # Compute diffs
+        diff_series = []
+        for i in range(1, len(raw_values)):
+            value = raw_values[i] - raw_values[i - 1]
+            diff_series.append(value)
+        diff_series = pd.Series(diff_series)
+        diff_values = diff_series.values
+        first_pass_values = diff_values
+        
+    elif encoder=='24h':
+        first_pass_values = []
+        for i in range(0, len(raw_values)):
+            hour = int(data.index[i] % (60*60*24) / 3600)
+            first_pass_values.append([hour,raw_values[i]])
+
+    elif encoder=='144m':
+        first_pass_values = []
+        for i in range(0, len(raw_values)):
+            tenminute = int(data.index[i] % (60*6*24) / 3600)
+            first_pass_values.append([tenminute,raw_values[i]])
+            
+    else:    
+        first_pass_values = raw_values
 
     # Scale values to -1, 1
     scaler = MinMaxScaler(feature_range=(-1, 1))
-    scaled_values = scaler.fit_transform(diff_values)
-    scaled_values = scaled_values.reshape(len(scaled_values), 1)
-        
+
+    if encoder in ['24h', '144m']:
+        scaled_values = scaler.fit_transform(first_pass_values)
+        #scaled_values = first_pass_values
+    else:
+        scaled_values = scaler.fit_transform(first_pass_values.reshape(len(first_pass_values), 1))
+        scaled_values = scaled_values.reshape(len(scaled_values), 1)
+
     # Hard debug
     #logger.debug('--- Encoding mapping ---') 
     #for i in range(1, len(raw_values)):
@@ -48,16 +72,14 @@ def encode_data(series):
     return scaler, scaled_values
 
 
-def reshape_matrix_data_for_LSTM(X):
+def reshape_matrix_data_for_LSTM(X, features_per_timestep=1):
     '''Reshape matrix data for LSTM, as it must include the "features per timestep" dimension'''
-    features_per_timestep = 1
-    return  X.reshape(X.shape[0], features_per_timestep, X.shape[1])
+    return  X.reshape(X.shape[0], features_per_timestep, int(X.shape[1]/features_per_timestep))
 
 
-def reshape_array_data_for_LSTM(x):
+def reshape_array_data_for_LSTM(x, features_per_timestep=1):
     '''Reshape array data for LSTM, as it must include the "features per timestep" dimension '''
-    features_per_timestep = 1
-    return x.reshape(1, features_per_timestep, len(x))
+    return x.reshape(1, features_per_timestep, int(len(x)/features_per_timestep))
 
 
 def split_data_vertically(data, cutoff):
@@ -67,7 +89,7 @@ def split_data_vertically(data, cutoff):
     return (X, y)
 
 
-def create_train_and_test_data(data, window_datapoints, forecast_datapoints, cutoff):
+def create_train_and_test_data(data, window_datapoints, forecast_datapoints, cutoff, encoder):
     '''Create train and test datasets'''
     
     dataFrame = pd.DataFrame(data)
@@ -77,11 +99,19 @@ def create_train_and_test_data(data, window_datapoints, forecast_datapoints, cut
     # Window datapoints
     for j,i in enumerate(range(window_datapoints, 0, -1)):
         cols.append(dataFrame.shift(i))
+        if encoder in ['24h', '144m']:
+            col_names.append('window h({})'.format(j))
         col_names.append('window ({})'.format(j))
     
     # Forecast datapoints 
     for i in range(0, forecast_datapoints):
-        cols.append(dataFrame.shift(-i))
+        shifted_cols = dataFrame.shift(-i)
+        
+        # Keep only the last col in case we are using more than one features
+        shifted_cols = shifted_cols[shifted_cols.shape[1]-1]
+
+        # Append
+        cols.append(shifted_cols)
         col_names.append('forecast ({})'.format(i))
                     
     # Merge
@@ -90,7 +120,10 @@ def create_train_and_test_data(data, window_datapoints, forecast_datapoints, cut
 
     # Drop NaN introduced due to shifting
     window_and_forecast_datapoints.dropna(inplace=True)
-
+    
+    #print('=============================')
+    #print(window_and_forecast_datapoints)
+    #print('=============================')
 
     # Split data in train and test sets
     train = window_and_forecast_datapoints.values[0:-cutoff]
@@ -100,18 +133,32 @@ def create_train_and_test_data(data, window_datapoints, forecast_datapoints, cut
     return train, test
 
 
-def decode_values(seed, scaler, encoded_values):
+def decode_values(seed, scaler, encoded_values, decoder):
     '''Decode encoded values'''
     decoded_values = []
-    prev_decoded_value = seed
-    for encoded_value in encoded_values:
-        decoded_value = prev_decoded_value + scaler.inverse_transform(encoded_value)[0][0]
-        decoded_values.append(decoded_value)
-        prev_decoded_value = decoded_value
+    
+    if decoder == 'diff':
+        prev_decoded_value = seed
+        for encoded_value in encoded_values:
+            decoded_value = prev_decoded_value + scaler.inverse_transform(encoded_value)[0][0]
+            decoded_values.append(decoded_value)
+            prev_decoded_value = decoded_value
+    
+    elif decoder in ['24h', '144m']:
+        for encoded_value in encoded_values:
+            encoded_value = [[0,encoded_value]]
+            decoded_value = scaler.inverse_transform(encoded_value)[0][1] # Keep only the last
+            decoded_values.append(decoded_value)
+
+    else:
+        for encoded_value in encoded_values:
+            decoded_value = scaler.inverse_transform(encoded_value)[0][0]
+            decoded_values.append(decoded_value)
+    
     return decoded_values
   
         
-def evaluate_model_on_encoded_data(model, encoded_test_data_in, encoded_test_data_out, initial_seed, scaler, plot=False):
+def evaluate_model_on_encoded_data(model, encoded_test_data_in, encoded_test_data_out, initial_seed, scaler, encoder, features_per_timestep, plot=False):
 
     # Support vars    
     prev_seed    = None
@@ -123,21 +170,21 @@ def evaluate_model_on_encoded_data(model, encoded_test_data_in, encoded_test_dat
         
         # Make the forecast
         x = encoded_test_data_in[i]
-        x = reshape_array_data_for_LSTM(x)
+        x = reshape_array_data_for_LSTM(x, features_per_timestep)
         encoded_forecast_values = list(model.predict(x)[0])
-        
+
         # Set the seed to decode the forecast
         if i != 0:
             # Use the last (decoded) value of the test data input array for this row
-            this_seed = decode_values(seed=prev_seed, scaler=scaler, encoded_values=[encoded_test_data_in[i][-1]])[0]
+            this_seed = decode_values(seed=prev_seed, scaler=scaler, encoded_values=[encoded_test_data_in[i][-1]], decoder=encoder)[0]
         else:
             this_seed = initial_seed
         # Save this seed to be used on the next loop
         prev_seed = this_seed
         
         # Ok, now decode the forecast and the values (that we will use to compute accuracy/error):
-        decoded_forecast_values = decode_values(seed=this_seed, scaler=scaler, encoded_values=encoded_forecast_values)
-        decoded_values          = decode_values(seed=this_seed, scaler=scaler, encoded_values=encoded_test_data_out[i])
+        decoded_forecast_values = decode_values(seed=this_seed, scaler=scaler, encoded_values=encoded_forecast_values, decoder=encoder)
+        decoded_values          = decode_values(seed=this_seed, scaler=scaler, encoded_values=encoded_test_data_out[i], decoder=encoder)
 
         # Append
         decoded_test_data_out_forecasted.append(decoded_forecast_values)
@@ -178,13 +225,14 @@ def evaluate_model_on_encoded_data(model, encoded_test_data_in, encoded_test_dat
 
 class Forecaster(object):
 
-    def __init__(self, window_datapoints=3, forecast_datapoints=1, test_ratio=0.2):
+    def __init__(self, window_datapoints=3, forecast_datapoints=1, test_ratio=0.2, encoder='diff'):
         '''Initialize a Forecaster'''
         self.window_datapoints   = window_datapoints
         self.forecast_datapoints = forecast_datapoints
         self.test_ratio          = test_ratio
+        self.encoder             = encoder
 
-    def train(self, dataTimeSlotSerie=None, pd_dataframe=None, epochs=10, neurons=100, plot=False, verbose=False):
+    def train(self, dataTimeSlotSerie=None, pd_dataframe=None, epochs=10, neurons=100, plot=False, verbose=False, model_type=1):
         '''Train on an input dataTimeSlotSeries'''
 
         if dataTimeSlotSerie:
@@ -195,42 +243,70 @@ class Forecaster(object):
         if pd_dataframe is None:
             raise Exception('Missing pd_dataframe argument')
         
+
         # configure
         window_datapoints = self.window_datapoints
         forecast_datapoints = self.forecast_datapoints
+        if self.encoder == 'diff':
+            encoded_window_datapoints = window_datapoints-1
+        else:
+            encoded_window_datapoints = window_datapoints
+
+        # Features  are the amount of features in every time step. In numerical time series data this is each timestamp
+        # has one feature (the value), but if using other values
+        features_per_timestep = 2 if self.encoder == '24h' else 1
         
         # Compute test datapoints based on the test_ratio
         test_datapoints = int(round(len(pd_dataframe)*self.test_ratio))
         logger.debug('Using "{}" datapoints for testing'.format(test_datapoints))
 
         # Encode data
-        scaler, encoded_data = encode_data(pd_dataframe)
+        scaler, encoded_data = encode_data(data=pd_dataframe, encoder=self.encoder)
 
         # Create train and test data sets
-        encoded_train_data, encoded_test_data = create_train_and_test_data(encoded_data, window_datapoints-1, forecast_datapoints, test_datapoints)
+        encoded_train_data, encoded_test_data = create_train_and_test_data(encoded_data, encoded_window_datapoints, forecast_datapoints, test_datapoints, encoder=self.encoder)
 
         # Split train and test data into input and output
-        encoded_train_data_in, encoded_train_data_out = split_data_vertically(data=encoded_train_data, cutoff=window_datapoints-1)
-        encoded_test_data_in,  encoded_test_data_out  = split_data_vertically(data=encoded_test_data,  cutoff=window_datapoints-1)
+        encoded_train_data_in, encoded_train_data_out = split_data_vertically(data=encoded_train_data, cutoff=encoded_window_datapoints*features_per_timestep)
+        encoded_test_data_in,  encoded_test_data_out  = split_data_vertically(data=encoded_test_data,  cutoff=encoded_window_datapoints*features_per_timestep)
 
         # Timesteps are basically the "lookback" memory of the network.
-        timesteps = window_datapoints-1
-
-        # Features  are the amount of features in every time step. In numerical time series data this is each timestamp has one feature (the value)
-        features = 1
+        timesteps = encoded_window_datapoints
 
         # Neural network model topology
-        model = Sequential()
-        model.add(LSTM(neurons, input_shape=(features, timesteps)))
-        model.add(Dense(encoded_train_data_out.shape[1]))
-        model.compile(loss='mean_squared_error', optimizer='adam')
+        logger.debug('Using model type="{}"'.format(model_type))
         
+        if model_type==1:
+            model = Sequential()
+            model.add(LSTM(neurons, input_shape=(features_per_timestep, timesteps)))
+            model.add(Dense(encoded_train_data_out.shape[1]))
+            model.compile(loss='mean_squared_error', optimizer='adam')
+            
+        elif model_type==2:
+            model = Sequential()
+            model.add(LSTM(200, activation='relu', input_shape=(features_per_timestep, timesteps)))
+            model.add(Dropout(0.15))
+            model.add(Dense(encoded_train_data_out.shape[1]))
+            model.compile(optimizer='adam', loss='mse')
+
+        elif model_type==3:
+            model = Sequential()
+            model.add(LSTM(32, return_sequences=True, input_shape=(features_per_timestep, timesteps)))
+            model.add(Dropout(0.05))
+            model.add(LSTM(16, activation='relu'))
+            model.add(Dropout(0.05))
+            model.add(Dense(encoded_train_data_out.shape[1]))
+            model.compile(optimizer=optimizers.RMSprop(clipvalue=1.0), loss='mae')
+
         # Train the model
-        model.fit(reshape_matrix_data_for_LSTM(encoded_train_data_in), encoded_train_data_out, epochs=epochs, verbose=verbose, shuffle=False)
+        model.fit(reshape_matrix_data_for_LSTM(encoded_train_data_in, features_per_timestep=features_per_timestep), encoded_train_data_out, epochs=epochs, verbose=verbose, shuffle=False)
 
         # Evaluate the model (compute RMSE). The initial seed allows to decode data and compute the error on actual numbers rather that on an encoded, neural network-friendly representation.
-        initial_seed = pd_dataframe[len(pd_dataframe) - (test_datapoints + (window_datapoints-1))]
-        rmse_values = evaluate_model_on_encoded_data(model, encoded_test_data_in, encoded_test_data_out, initial_seed, scaler, plot=plot)
+        if self.encoder == 'diff':
+            initial_seed = pd_dataframe[len(pd_dataframe) - (test_datapoints + (encoded_window_datapoints))]
+        else:
+            initial_seed = None
+        rmse_values = evaluate_model_on_encoded_data(model, encoded_test_data_in, encoded_test_data_out, initial_seed, scaler, encoder=self.encoder, features_per_timestep=features_per_timestep, plot=plot)
 
         # Save model and parameters internally
         self.model = model
