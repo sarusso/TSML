@@ -103,7 +103,7 @@ class test_vibration(unittest.TestCase):
         self.assertTrue(vibrationClassifier.loss < 0.2)
         self.assertTrue(vibrationClassifier.accuracy > 0.95)
 
-        # Ok, now test for precision, recall(sensitivity) and specificity.
+        # Ok, now test for dataset-wise accuracy, precision, recall(sensitivity) and specificity.
         TP = 0
         TN = 0
         FP = 0
@@ -112,12 +112,12 @@ class test_vibration(unittest.TestCase):
         for i in range(0, len(data)):
             predicted_class = vibrationClassifier.predict(data[i])
             if predicted_class == labels[i]:
-                if labels[i] == 0:
+                if labels[i] in [0,1,2]:
                     TN += 1
                 else:
                     TP += 1
             else:
-                if labels[i] == 0:
+                if labels[i] in [0,1,2]:
                     FN += 1
                 else:
                     FP += 1
@@ -126,15 +126,18 @@ class test_vibration(unittest.TestCase):
         #print('False positives: "{}"'.format(FP))
         #print('True negatives: "{}"'.format(TN))
         #print('False negatives: "{}"'.format(FN))
-        
+
+        accuracy    = 1 - float(FP+FN)/float(TP+TN+FP+FN)      
         precision   = float(TP)/float(TP+FP)
         recall      = float(TP)/float(TP+FN)
         specificity = float(TN)/float(TN+FP)   
 
+        #print('Accuracy: "{}"'.format(accuracy))
         #print('Precision: "{}"'.format(precision))
         #print('Recall (sensitivity): "{}"'.format(recall))
         #print('Specificity: "{}"'.format(specificity))
         
-        self.assertTrue(precision > 0.98)
-        self.assertTrue(recall > 0.98)
+        self.assertTrue(accuracy > 0.99)
+        self.assertTrue(precision > 0.97)
+        self.assertTrue(recall > 0.97)
         self.assertTrue(specificity > 0.97)
