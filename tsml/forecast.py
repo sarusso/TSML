@@ -231,6 +231,7 @@ class Forecaster(object):
         self.forecast_datapoints = forecast_datapoints
         self.test_ratio          = test_ratio
         self.encoder             = encoder
+        self.model               = None
 
     def train(self, dataTimeSlotSerie=None, pd_dataframe=None, epochs=10, neurons=100, plot=False, verbose=False, model_type=1):
         '''Train on an input dataTimeSlotSeries'''
@@ -273,43 +274,56 @@ class Forecaster(object):
         # Timesteps are basically the "lookback" memory of the network.
         timesteps = encoded_window_datapoints
 
-        # Neural network model topology
-        logger.debug('Using model type="{}"'.format(model_type))
+        if not self.model:
+            # Neural network model topology
+            logger.debug('Using model type="{}"'.format(model_type))
         
-        if model_type==1:
-            model = Sequential()
-            model.add(LSTM(neurons, input_shape=(features_per_timestep, timesteps)))
-            model.add(Dense(encoded_train_data_out.shape[1]))
-            model.compile(loss='mean_squared_error', optimizer='adam')
-            
-        elif model_type==2:
-            model = Sequential()
-            model.add(LSTM(200, activation='relu', input_shape=(features_per_timestep, timesteps)))
-            model.add(Dropout(0.15))
-            model.add(Dense(encoded_train_data_out.shape[1]))
-            model.compile(optimizer='adam', loss='mse')
-
-        elif model_type==3:
-            model = Sequential()
-            model.add(LSTM(32, return_sequences=True, input_shape=(features_per_timestep, timesteps)))
-            model.add(Dropout(0.05))
-            model.add(LSTM(16, activation='relu'))
-            model.add(Dropout(0.05))
-            model.add(Dense(encoded_train_data_out.shape[1]))
-            model.compile(optimizer=optimizers.RMSprop(clipvalue=1.0), loss='mae')
+            if model_type==1:
+                model = Sequential()
+                model.add(LSTM(neurons, input_shape=(features_per_timestep, timesteps)))
+                model.add(Dense(encoded_train_data_out.shape[1]))
+                model.compile(loss='mean_squared_error', optimizer='adam')
+                
+            elif model_type==2:
+                model = Sequential()
+                model.add(LSTM(200, activation='relu', input_shape=(features_per_timestep, timesteps)))
+                model.add(Dropout(0.15))
+                model.add(Dense(encoded_train_data_out.shape[1]))
+                model.compile(optimizer='adam', loss='mse')
+    
+            elif model_type==3:
+                model = Sequential()
+                model.add(LSTM(32, return_sequences=True, input_shape=(features_per_timestep, timesteps)))
+                model.add(Dropout(0.05))
+                model.add(LSTM(16, activation='relu'))
+                model.add(Dropout(0.05))
+                model.add(Dense(encoded_train_data_out.shape[1]))
+                model.compile(optimizer=optimizers.RMSprop(clipvalue=1.0), loss='mae')
+            self.model = model
 
         # Train the model
-        model.fit(reshape_matrix_data_for_LSTM(encoded_train_data_in, features_per_timestep=features_per_timestep), encoded_train_data_out, epochs=epochs, verbose=verbose, shuffle=False)
+        self.model.fit(reshape_matrix_data_for_LSTM(encoded_train_data_in, features_per_timestep=features_per_timestep), encoded_train_data_out, epochs=epochs, verbose=verbose, shuffle=False)
 
         # Evaluate the model (compute RMSE). The initial seed allows to decode data and compute the error on actual numbers rather that on an encoded, neural network-friendly representation.
-        if self.encoder == 'diff':
-            initial_seed = pd_dataframe[len(pd_dataframe) - (test_datapoints + (encoded_window_datapoints))]
+        if not test_datapoints:
+            logger.info('Will not evaluate model as no test data at all')
+            evaluate = False
+        else: 
+            if self.encoder == 'diff':
+                try:
+                    initial_seed = pd_dataframe[len(pd_dataframe) - (test_datapoints + (encoded_window_datapoints))]
+                except KeyError:
+                    logger.warning('Cannot evaluate model as no enough test data')
+                    evaluate = False
+            else:
+                initial_seed = None
+
+        if evaluate:
+            rmse_values = evaluate_model_on_encoded_data(model, encoded_test_data_in, encoded_test_data_out, initial_seed, scaler, encoder=self.encoder, features_per_timestep=features_per_timestep, plot=plot)
         else:
-            initial_seed = None
-        rmse_values = evaluate_model_on_encoded_data(model, encoded_test_data_in, encoded_test_data_out, initial_seed, scaler, encoder=self.encoder, features_per_timestep=features_per_timestep, plot=plot)
+            rmse_values = None
 
         # Save model and parameters internally
-        self.model = model
         self.scaler = scaler
         self.window_datapoints = window_datapoints
         self.forecast_datapoints = forecast_datapoints
