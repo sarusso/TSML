@@ -137,7 +137,7 @@ class test_vibration(unittest.TestCase):
         #print('Recall (sensitivity): "{}"'.format(recall))
         #print('Specificity: "{}"'.format(specificity))
         
-        self.assertTrue(accuracy > 0.99)
+        self.assertTrue(accuracy > 0.97)
         self.assertTrue(precision > 0.97)
         self.assertTrue(recall > 0.97)
         self.assertTrue(specificity > 0.97)
