@@ -308,16 +308,16 @@ class Forecaster(object):
                 
             elif model_type==2:
                 model = Sequential()
-                model.add(LSTM(200, activation='relu', input_shape=(features_per_timestep, timesteps)))
+                model.add(LSTM(neurons, activation='relu', input_shape=(features_per_timestep, timesteps)))
                 model.add(Dropout(0.15))
                 model.add(Dense(encoded_train_data_out.shape[1]))
                 model.compile(optimizer='adam', loss='mse')
     
             elif model_type==3:
                 model = Sequential()
-                model.add(LSTM(32, return_sequences=True, input_shape=(features_per_timestep, timesteps)))
+                model.add(LSTM(neurons, return_sequences=True, input_shape=(features_per_timestep, timesteps)))
                 model.add(Dropout(0.05))
-                model.add(LSTM(16, activation='relu'))
+                model.add(LSTM(int(neurons/2), activation='relu'))
                 model.add(Dropout(0.05))
                 model.add(Dense(encoded_train_data_out.shape[1]))
                 model.compile(optimizer=optimizers.RMSprop(clipvalue=1.0), loss='mae')
@@ -363,8 +363,17 @@ class Forecaster(object):
         encoded_series=[]
         prev_datapoint = None
         for datapoint in series:
-            if prev_datapoint is not None:
-                encoded_series.append(self.scaler.transform(datapoint-prev_datapoint))
+            if prev_datapoint is not None:  
+                if self.encoder=='diff':
+                    encoded_series.append(self.scaler.transform(diff_encode(datapoint,prev_datapoint)))
+                elif self.encoder == 'ratio':
+                    encoded_series.append(self.scaler.transform(ratio_encode(datapoint,prev_datapoint)))
+                else:         
+                    encoded_series.append(self.scaler.transform(datapoint))
+            else:
+                if self.encoder not in ['diff', 'ratio']:
+                    encoded_series.append(self.scaler.transform(datapoint))
+                    
             prev_datapoint = datapoint
         logger.debug('Encoded series: "{}"'.format(encoded_series))
 
