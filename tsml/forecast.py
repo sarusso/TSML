@@ -23,16 +23,33 @@ import sys
 # Utility functions
 #======================
 
+def diff_encode(val1,val2):
+    return (val1-val2)
+
+def diff_decode(val1, val2):
+    return (val1+val2)
+
+def ratio_encode(val1,val2):
+    return (val1/val2)
+
+def ratio_decode(val1, val2):
+    return (val1*val2)
+
 def encode_data(data, encoder):
     '''Encode (compute diffs and normalize) data'''
 
     raw_values = data.values
     
-    if encoder=='diff':
+    if encoder in ['diff', 'ratio']:
         # Compute diffs
         diff_series = []
         for i in range(1, len(raw_values)):
-            value = raw_values[i] - raw_values[i - 1]
+            if encoder == 'diff':
+                value = diff_encode(raw_values[i], raw_values[i - 1])
+            elif encoder == 'ratio':
+                value = ratio_encode(raw_values[i], raw_values[i - 1])
+            else:
+                raise Exception('Consistency Exception')
             diff_series.append(value)
         diff_series = pd.Series(diff_series)
         diff_values = diff_series.values
@@ -136,11 +153,16 @@ def create_train_and_test_data(data, window_datapoints, forecast_datapoints, cut
 def decode_values(seed, scaler, encoded_values, decoder):
     '''Decode encoded values'''
     decoded_values = []
-    
-    if decoder == 'diff':
+
+    if decoder in ['diff', 'ratio']:
         prev_decoded_value = seed
         for encoded_value in encoded_values:
-            decoded_value = prev_decoded_value + scaler.inverse_transform(encoded_value)[0][0]
+            if decoder == 'diff':
+                decoded_value = diff_decode(prev_decoded_value, scaler.inverse_transform(encoded_value)[0][0])
+            elif decoder == 'ratio':
+                decoded_value = ratio_decode(prev_decoded_value, scaler.inverse_transform(encoded_value)[0][0])
+            else:
+                raise Exception('Consistency Exception')
             decoded_values.append(decoded_value)
             prev_decoded_value = decoded_value
     
@@ -248,7 +270,7 @@ class Forecaster(object):
         # configure
         window_datapoints = self.window_datapoints
         forecast_datapoints = self.forecast_datapoints
-        if self.encoder == 'diff':
+        if self.encoder in ['diff', 'ratio']:
             encoded_window_datapoints = window_datapoints-1
         else:
             encoded_window_datapoints = window_datapoints
@@ -305,6 +327,7 @@ class Forecaster(object):
         self.model.fit(reshape_matrix_data_for_LSTM(encoded_train_data_in, features_per_timestep=features_per_timestep), encoded_train_data_out, epochs=epochs, verbose=verbose, shuffle=False)
 
         # Evaluate the model (compute RMSE). The initial seed allows to decode data and compute the error on actual numbers rather that on an encoded, neural network-friendly representation.
+        evaluate=True
         if not test_datapoints:
             logger.info('Will not evaluate model as no test data at all')
             evaluate = False
@@ -356,9 +379,14 @@ class Forecaster(object):
         for encoded_forecast in encoded_forecasts:
 
             if prev_decoded_forecast is None:
-                forecast = series[-1] + float(self.scaler.inverse_transform(encoded_forecast))
-            else:
-                forecast = prev_decoded_forecast + float(self.scaler.inverse_transform(encoded_forecast))
+                prev_decoded_forecast = series[-1]
+
+            if self.encoder=='diff':
+                forecast = diff_decode(prev_decoded_forecast, float(self.scaler.inverse_transform(encoded_forecast)))
+            elif self.encoder == 'ratio':
+                forecast = ratio_decode(prev_decoded_forecast, float(self.scaler.inverse_transform(encoded_forecast)))
+            else:         
+                forecast = float(self.scaler.inverse_transform(encoded_forecast))
             
             decoded_forecasts.append(forecast)
             prev_decoded_forecast =  forecast
